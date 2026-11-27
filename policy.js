@@ -11,13 +11,17 @@ import { dirname } from 'node:path';
 import { validFallbackAfter } from './coordination.js';
 
 export const PROTOCOL = 'bioswarm.v1';
-export const CONNECTOR_VERSION = '0.3.1';
+export const CONNECTOR_VERSION = '0.4.0';
 
-// Community policy: the lab's published defaults, usable with no account.
+// Community policy: the lab's published defaults, usable with no account. Hash arbitration is on (LI27, LI30: needed in
+// symmetric conflicts); trace waiting is off and stays an experimental opt-in (Phase 1b and 1b-r: slower, no saving).
+// Without a published wave the connector keeps the plain community rules, so hash arbitration costs nothing there.
 export const COMMUNITY_POLICY = Object.freeze({
-  id: 'community-0', protocol: PROTOCOL, source: 'community', ttlSeconds: 0,
-  rules: { runBudgetUsd: 3, messagesPerRun: 1, messageChars: 600, messagesPerSession: null, gate: null },
+  id: 'community-1', protocol: PROTOCOL, source: 'community', ttlSeconds: 0,
+  rules: Object.freeze({ runBudgetUsd: 3, messagesPerRun: 1, messageChars: 600, messagesPerSession: null, gate: null, tieBreak: 'hash', waitForTrace: false }),
 });
+export const COORDINATION_KEYS = ['tieBreak', 'waitForTrace'];
+export const setsCoordination = (rules) => Boolean(rules) && COORDINATION_KEYS.some((key) => Object.hasOwn(rules, key));
 
 // Rules a remote policy may set. Anything else in a response is ignored, so a policy cannot reach outside the loop.
 const REMOTE_KEYS = ['runBudgetUsd', 'messagesPerRun', 'messageChars', 'messagesPerSession', 'gate', 'waitForTrace', 'tieBreak'];
@@ -30,10 +34,14 @@ export function sanitizeRules(rules) {
 }
 
 // Merge order: community < remote policy < local `.bioswarm` settings. A local budget can only lower the remote one:
-// the person on the machine always keeps the brake.
-export function mergeConfig(remoteRules = {}, localSettings = {}) {
-  const remote = sanitizeRules(remoteRules);
-  const merged = { ...COMMUNITY_POLICY.rules, ...remote, ...localSettings };
+// the person on the machine always keeps the brake. Coordination switches come from the community policy only when
+// no remote policy is in force: a Control strategy that leaves them out (for example `stigmergy`) keeps them off.
+export function mergeConfig(remoteRules = COMMUNITY_POLICY.rules, localSettings = {}) {
+  const community = (remoteRules ?? COMMUNITY_POLICY.rules) === COMMUNITY_POLICY.rules;
+  const remote = sanitizeRules(remoteRules ?? COMMUNITY_POLICY.rules);
+  const base = { ...COMMUNITY_POLICY.rules };
+  if (!community) for (const key of COORDINATION_KEYS) delete base[key];
+  const merged = { ...base, ...remote, ...localSettings };
   if (typeof remote.runBudgetUsd === 'number' && typeof localSettings.runBudgetUsd === 'number') merged.runBudgetUsd = Math.min(remote.runBudgetUsd, localSettings.runBudgetUsd);
   // Refresh also clears a previously assigned threshold when the policy stops setting it.
   merged.fallbackAfter = validFallbackAfter(localSettings.fallbackAfter) ? localSettings.fallbackAfter : remote.fallbackAfter;

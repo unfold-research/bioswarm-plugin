@@ -11,7 +11,7 @@ import { spawnSync } from 'node:child_process';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import {assignment, checkAt, currentWave, matchesTrace, traceRequired, validDestination} from './coordination.js';
 import { Type } from 'typebox';
-import { loadPolicy, mergeConfig, readCache, sendEvents } from './policy.js';
+import { loadPolicy, mergeConfig, readCache, sendEvents, setsCoordination } from './policy.js';
 
 // messagesPerSession (off by default) caps messages to other agents over the whole session, that is, until the host
 // starts a new chat. messagesPerRun alone resets at every turn, so a back-and-forth across turns escapes it.
@@ -45,10 +45,14 @@ export function createBioSwarm({ cwd = process.cwd(), now = () => Date.now(), en
     let policyId = cachedPolicy?.id || 'community-0';
     const { apiUrl: _apiUrl, ...localSettings } = settings;
     let config = { ...DEFAULTS, ...mergeConfig(cachedPolicy?.rules, localSettings) };
+    // Coordination chosen by a policy or the local marker binds even before a wave exists (the runner publishes first).
+    // The community default binds only once a wave is published, so an agent with no runner keeps its normal tools.
+    let explicitCoordination = setsCoordination(cachedPolicy?.rules) || setsCoordination(localSettings);
     // Refresh the remote policy at the start of each run; never longer than the policy client's timeout.
     const refreshPolicy = async () => {
       const { policy, source } = await loadPolicy(remote);
       config = { ...DEFAULTS, ...mergeConfig(policy.rules, localSettings) };
+      explicitCoordination = (source !== 'community' && setsCoordination(policy.rules)) || setsCoordination(localSettings);
       if (policy.id !== policyId || source === 'remote') log({ type: 'policy', kind: source });
       policyId = policy.id;
     };
@@ -71,7 +75,7 @@ export function createBioSwarm({ cwd = process.cwd(), now = () => Date.now(), en
     const marks = () => { try { return readFileSync(fieldFile, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)); } catch { return []; } };
     // A file is taken while its latest taken/released mark is a taken one left by another agent.
     const waveDir = settings.waveDir ? resolve(cwd,settings.waveDir) : join(fieldDir,'waves');
-    const coordinated = () => config.waitForTrace===true || config.tieBreak==='hash';
+    const coordinated = () => (config.waitForTrace===true || config.tieBreak==='hash') && (explicitCoordination || existsSync(join(waveDir,'wave-1.json')));
     const appendMark = mark => {
       appendFileSync(fieldFile,JSON.stringify({...mark,by:self,at:now()})+'\n');
       log({type:'mark',kind:mark.kind, ...(mark.class ? {wave:mark.wave,check:mark.check,class:mark.class} : {})});

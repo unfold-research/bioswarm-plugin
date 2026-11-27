@@ -23,8 +23,8 @@ Why code and not a prompt? It is the first thing [Unfold Research](https://githu
 measured: a rule binds only when code applies it to the state of the work. Written in an instruction file, it is advice.
 
 > [!NOTE]
-> Pre-release (0.3.1). The interface may change between minor versions. Waiting for an addressed trace is experimental
-> and off by default. See [What the research says](#what-the-research-says) before you expect any gain.
+> Pre-release (0.4.0). The interface may change between minor versions. The hash tie-break is on by default once a
+> wave is published; waiting for an addressed trace is experimental and off by default. See [What the research says](#what-the-research-says) before you expect any gain.
 
 ## Contents
 
@@ -103,9 +103,9 @@ remote one, so the person on the machine always keeps the brake.
 | `messageChars` | `600` | longest message to another agent |
 | `messagesPerSession` | `null` | optional ceiling across a whole chat |
 | `gate` | `null` | acceptance gate: `{ dir, command, checks, packages, rounds, timeoutMs }` |
-| `tieBreak` | from policy | `"hash"` turns on the hash tie-break on published waves |
+| `tieBreak` | `"hash"` without a key, else from policy | the hash tie-break on published waves; `null` turns it off |
 | `waitForTrace` | `false` | experimental addressed-trace rule |
-| `fallbackAfter` | from policy | waves before an unchanged single check is reassigned to an outside teammate |
+| `fallbackAfter` | from policy, else the wave, else `3` | waves before an unchanged single check is reassigned to an outside teammate (needs the tie-break, not trace waiting) |
 | `field` | host shared folder | path of the shared field |
 | `apiUrl` | none | BioSwarm Control API endpoint |
 

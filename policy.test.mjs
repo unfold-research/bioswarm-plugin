@@ -72,3 +72,52 @@ test('the received threshold changes the recovery wave and withdrawing it restor
     assert.equal(assignment({ ...wave, wave: 3 }, { ...check, loneWaves: 3 }, cfg).fallback, true);
   }
 });
+
+test('0.4 community policy: hash tie-break on and trace waiting off, with no key', async () => {
+  const { policy, source } = await loadPolicy({ cacheFile: cacheFile() });
+  assert.equal(source, 'community');
+  assert.equal(policy.rules.tieBreak, 'hash');
+  assert.equal(policy.rules.waitForTrace, false);
+  for (const cfg of [mergeConfig(), mergeConfig(undefined, {}), mergeConfig(null), mergeConfig(policy.rules)]) {
+    assert.equal(cfg.tieBreak, 'hash');
+    assert.equal(cfg.waitForTrace, false);
+  }
+  // Trace waiting stays available as an explicit experimental opt-in, and the local marker can switch hash off.
+  assert.equal(mergeConfig(undefined, { waitForTrace: true }).waitForTrace, true);
+  assert.equal(mergeConfig(undefined, { tieBreak: null }).tieBreak, null);
+});
+
+test('0.4 a remote policy that leaves the coordination switches out does not inherit the community hash', () => {
+  const stigmergy = mergeConfig({ messagesPerRun: 1 });
+  assert.equal(stigmergy.tieBreak, undefined);
+  assert.equal(stigmergy.waitForTrace, undefined);
+  const study = mergeConfig({ waitForTrace: true, tieBreak: 'hash' });
+  assert.deepEqual([study.tieBreak, study.waitForTrace], ['hash', true]);
+});
+
+test('0.4 stalled-check fallback works with hash alone, after N waves, N configurable with a default of 3', async () => {
+  const { assignment, DEFAULT_FALLBACK_AFTER } = await import('./coordination.js');
+  assert.equal(DEFAULT_FALLBACK_AFTER, 3);
+  const team = ['owner', 'peer', 'helper'];
+  const check = { id: 'balance', owners: ['owner'] };
+  const hashOnly = mergeConfig();
+  const at = (loneWaves, cfg = hashOnly, wave = { run: 'run', wave: 9, team }) => assignment(wave, { ...check, loneWaves }, cfg);
+  // A wave without fallbackAfter uses the default of three.
+  assert.deepEqual([1, 2, 3, 4].map((n) => at(n).fallback), [false, false, true, true]);
+  const rescue = at(3);
+  assert.ok(['peer', 'helper'].includes(rescue.agent));
+  // The rescuer is stable across later waves of the same stall.
+  assert.equal(assignment({ run: 'run', wave: 10, team }, { ...check, loneWaves: 4 }, hashOnly).agent, rescue.agent);
+  // The wave, then the policy, then the local marker set N.
+  assert.equal(at(3, hashOnly, { run: 'run', wave: 9, team, fallbackAfter: 5 }).fallback, false);
+  assert.equal(at(5, hashOnly, { run: 'run', wave: 9, team, fallbackAfter: 5 }).fallback, true);
+  assert.equal(at(3, mergeConfig({ tieBreak: 'hash', fallbackAfter: 4 })).fallback, false);
+  assert.equal(at(4, mergeConfig(undefined, { fallbackAfter: 4 })).fallback, true);
+  // Without hash arbitration there is no recovery, and a team with no outsider keeps its owner.
+  assert.equal(at(9, mergeConfig(undefined, { tieBreak: null })).fallback, false);
+  assert.deepEqual(assignment({ run: 'run', wave: 9, team: ['owner'] }, { ...check, loneWaves: 9 }, hashOnly), { agent: 'owner', fallback: false });
+  // Scoped waves: under hash alone a lone `own` check is rescued too; the experimental trace contract keeps it (0.3).
+  const scoped = { run: 'run', wave: 9, team, coordination: 'scoped-v1' };
+  assert.equal(assignment(scoped, { ...check, class: 'own', loneWaves: 3 }, hashOnly).fallback, true);
+  assert.equal(assignment(scoped, { ...check, class: 'own', loneWaves: 3 }, mergeConfig(undefined, { waitForTrace: true })).fallback, false);
+});
