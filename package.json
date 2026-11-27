@@ -1,0 +1,69 @@
+{
+  "name": "@unfold/bioswarm-pi",
+  "version": "0.3.1",
+  "description": "BioSwarm plugin for Pi agents and OpenBot agents on Pi: bio-inspired coordination rules (shared field, tie-break, message and spending ceilings) enforced inside the agent loop.",
+  "license": "Apache-2.0",
+  "author": "Unfold Research (https://unfold.host)",
+  "homepage": "https://github.com/unfold-research/bioswarm-plugin#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/unfold-research/bioswarm-plugin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/unfold-research/bioswarm-plugin/issues"
+  },
+  "keywords": [
+    "ai-agents",
+    "multi-agent",
+    "coordination",
+    "stigmergy",
+    "swarm",
+    "bio-inspired",
+    "pi",
+    "pi-extension",
+    "openbot",
+    "bioswarm"
+  ],
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "bioswarm-pi": "bin/bioswarm-pi.mjs"
+  },
+  "files": [
+    "index.js",
+    "policy.js",
+    "coordination.js",
+    "bin",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "pi": {
+    "extensions": [
+      "./index.js"
+    ]
+  },
+  "bioswarm": {
+    "protocol": "bioswarm.v1",
+    "hosts": {
+      "pi": ">=1.5.2 <2",
+      "openbot": ">=0.69"
+    }
+  },
+  "peerDependencies": {
+    "typebox": "^1.3.27"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "typebox": "1.3.27"
+  },
+  "scripts": {
+    "test": "node --test connector.test.mjs policy.test.mjs",
+    "prepare": "node -e \"try{require('child_process').execSync('git rev-parse --git-dir',{stdio:'ignore'});require('child_process').execSync('git config core.hooksPath .githooks')}catch{}\"",
+    "leak-check": "node scripts/leak-check.mjs"
+  }
+}

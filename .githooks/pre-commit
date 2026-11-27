@@ -1,0 +1,8 @@
+#!/bin/sh
+# Blocks secrets, personal data and private references before they are committed (see scripts/leak-check.mjs).
+# Installed by `npm install` (prepare) or by hand: git config core.hooksPath .githooks
+set -e
+node scripts/leak-check.mjs --staged
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks git --pre-commit --staged --redact --no-banner
+fi

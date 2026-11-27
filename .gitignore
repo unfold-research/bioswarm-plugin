@@ -1,0 +1,5 @@
+node_modules/
+.bioswarm
+.bioswarm-*.json
+.bioswarm-events.jsonl
+.bioswarm-field/
