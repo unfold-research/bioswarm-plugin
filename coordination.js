@@ -14,6 +14,11 @@ import {
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 
 export const validFallbackAfter = (value) => Number.isSafeInteger(value) && value >= 2;
+// Waves with one unchanged check before an outsider takes it, when neither the wave nor a policy sets a threshold.
+// Three is the value every BioSwarm bench run used so far. In LI42 the stuck stigwait case held one
+// failing check from wave 8 to the cap at wave 16, so three waves would have rescued it about five waves before the
+// cap. It is an engineering choice, not a measured optimum.
+export const DEFAULT_FALLBACK_AFTER = 3;
 
 const digest = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const read = (file) => JSON.parse(readFileSync(file, 'utf8'));
@@ -36,7 +41,7 @@ function validate(spec) {
     !Array.isArray(spec.checks)
   )
     throw Error('Invalid wave header');
-  if (!validFallbackAfter(spec.fallbackAfter))
+  if (spec.fallbackAfter !== undefined && !validFallbackAfter(spec.fallbackAfter))
     throw Error('fallbackAfter must be an integer of at least two waves');
   if (spec.coordination !== undefined && spec.coordination !== 'scoped-v1')
     throw Error('Unknown wave coordination mode');
@@ -66,7 +71,8 @@ function validate(spec) {
 }
 
 // A run has its own local wave directory. Exclusive links prevent two publishers replacing the same wave.
-export function publishWave(dir, spec) {
+export function publishWave(dir, input) {
+  const spec = { ...input, fallbackAfter: input.fallbackAfter ?? DEFAULT_FALLBACK_AFTER };
   validate(spec);
   mkdirSync(dir, { recursive: true });
   const prev = spec.wave > 1 ? read(waveFile(dir, spec.wave - 1)) : null;
@@ -131,13 +137,19 @@ function ranked(candidates, wave, check) {
     return x < y ? 1 : x > y ? -1 : a.localeCompare(b);
   })[0];
 }
+// Stalled-check recovery runs whenever hash arbitration is on, with or without trace waiting. Only the experimental
+// scoped trace contract keeps a lone `own` check with its owner, as in 0.3 (Phase 1b-r fact s3).
 export function assignment(wave, check, config) {
-  const threshold = validFallbackAfter(config.fallbackAfter) ? config.fallbackAfter : wave.fallbackAfter;
+  const threshold = validFallbackAfter(config.fallbackAfter)
+    ? config.fallbackAfter
+    : validFallbackAfter(wave.fallbackAfter)
+      ? wave.fallbackAfter
+      : DEFAULT_FALLBACK_AFTER;
   const outsiders = wave.team.filter((a) => !check.owners.includes(a));
+  const ownKept = config.waitForTrace === true && wave.coordination === 'scoped-v1' && check.class === 'own';
   if (
     config.tieBreak === 'hash' &&
-    config.waitForTrace === true &&
-    (wave.coordination !== 'scoped-v1' || check.class !== 'own') &&
+    !ownKept &&
     check.loneWaves >= threshold &&
     outsiders.length
   )

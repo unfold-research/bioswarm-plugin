@@ -1,6 +1,6 @@
 {
   "name": "@unfold/bioswarm-pi",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "BioSwarm plugin for Pi agents and OpenBot agents on Pi: bio-inspired coordination rules (shared field, tie-break, message and spending ceilings) enforced inside the agent loop.",
   "license": "Apache-2.0",
   "author": "Unfold Research (https://unfold.host)",

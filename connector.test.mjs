@@ -349,3 +349,55 @@ test('the recommended hash-only policy reproduces 0.2 writer and yields on both 
     assert.deepEqual(marks.map(m => [m.by,m.to]),[[loser,winner],['teo',winner]]);
   }
 });
+
+test('0.4 community policy with no wave keeps normal tools: hash is on but nothing is gated', async t => {
+  const { cwd } = layout();
+  const target = join(cwd, 'notes.txt');
+  const s = await session(t, cwd, [
+    fauxAssistantMessage([fauxToolCall('write', { path: target, content: 'free' })], { stopReason: 'toolUse' }),
+    fauxAssistantMessage('Done.'),
+  ], { connectorOptions: { env: {} } });
+  await s.prompt('Write the notes.');
+  assert.equal(readFileSync(target, 'utf8'), 'free');
+  assert.ok(!events(join(cwd, '.bioswarm-events.jsonl')).some(e => e.type === 'rule'));
+});
+
+test('0.4 community policy with a published wave: hash picks one writer, and a lone stalled check goes to an outsider without a trace', async t => {
+  const { realpathSync, rmSync } = await import('node:fs');
+  const { publishWave, assignment, currentWave } = await import('./coordination.js');
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'bioswarm-community-')));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const task = join(root, 'task'), field = join(root, 'field'), waves = join(root, 'waves');
+  mkdirSync(task);
+  const team = ['lia', 'rui', 'teo'];
+  for (const agent of team) { mkdirSync(join(root, agent)); writeFileSync(join(root, agent, '.bioswarm'), JSON.stringify({ field, waveDir: waves })); }
+  const file = join(task, 'balance.txt');
+  const check = { id: 'balance', place: 'balance.txt', owners: ['lia', 'rui'], revision: 'r1' };
+  // No fallbackAfter in the wave: the default of three applies.
+  const spec = { run: 'community', root: task, team, checks: [check] };
+  const w1 = publishWave(waves, { ...spec, wave: 1 });
+  assert.equal(w1.fallbackAfter, 3);
+  const rules = { tieBreak: 'hash', waitForTrace: false };
+  const writer = assignment(w1, w1.checks[0], rules).agent, other = check.owners.find(a => a !== writer);
+  const write = agent => fauxAssistantMessage([fauxToolCall('write', { path: file, content: agent })], { stopReason: 'toolUse' });
+  const act = async agent => {
+    const s = await session(t, join(root, agent), [write(agent), fauxAssistantMessage('Done.')], { connectorOptions: { env: {} } });
+    await s.prompt('Write the balance.');
+  };
+  await act(other);
+  assert.equal(existsSync(file), false);
+  await act(writer);
+  assert.equal(readFileSync(file, 'utf8'), writer);
+  // The check stays failing, alone and unchanged through wave 4 (lone since wave 1), past the threshold of three.
+  for (const n of [2, 3, 4]) publishWave(waves, { ...spec, wave: n });
+  const stalled = currentWave(waves);
+  assert.equal(stalled.checks[0].loneWaves, 4);
+  const rescue = assignment(stalled, stalled.checks[0], rules);
+  assert.deepEqual(rescue, { agent: 'teo', fallback: true });
+  await act(writer);
+  assert.equal(readFileSync(file, 'utf8'), writer, 'the stalled owner no longer writes');
+  await act('teo');
+  assert.equal(readFileSync(file, 'utf8'), 'teo', 'the outsider writes without an addressed trace');
+  assert.ok(events(join(root, 'teo', '.bioswarm-events.jsonl')).some(e => e.rule === 'stalled_check_reassigned'));
+  assert.ok(events(join(field, 'field.jsonl')).some(m => m.kind === 'yielded' && m.by === writer && m.to === 'teo'));
+});
